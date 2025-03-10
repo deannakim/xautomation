@@ -2,8 +2,6 @@ import tweepy
 import schedule
 import time
 import json
-import random
-import string
 from datetime import datetime
 import os
 from dotenv import load_dotenv
@@ -118,22 +116,13 @@ class TwitterBot:
         try:
             tweet = self.tweets[self.current_index]
             
-            # 랜덤 문자열 생성 (눈에 잘 띄지 않는 위치에 추가)
-            random_str = ''.join(random.choices(string.ascii_letters + string.digits, k=4))
-            
-            # 트윗 끝에 랜덤 문자열 추가 (점 뒤에 공백과 함께)
-            if any(tweet.endswith(x) for x in ['.', '!', '?', ')', ']', '}']):
-                modified_tweet = tweet + ' ' + random_str
-            else:
-                modified_tweet = tweet + '. ' + random_str
-            
-            # 트윗 길이 제한 확인 (280자)
-            if len(modified_tweet) > 280:
-                modified_tweet = tweet[:270] + '... ' + random_str
+            # 눈에 보이지 않는 문자 추가 (제로 너비 공백)
+            invisible_char = "\u200B"  # 제로 너비 공백
+            modified_tweet = tweet + invisible_char * (self.current_index % 5 + 1)
             
             response = self.client.create_tweet(text=modified_tweet)
             print(f"트윗 발송 성공! ({datetime.now()})")
-            print(f"내용: {tweet} (랜덤 문자열: {random_str})")
+            print(f"내용: {tweet}")
             
             # 다음 트윗으로 이동
             self.current_index = (self.current_index + 1) % len(self.tweets)
