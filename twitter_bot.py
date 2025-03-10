@@ -151,7 +151,7 @@ def main():
     
     # 첫 번째 트윗 즉시 발송 (환경 변수로 제어 가능)
     # 기본값을 false로 변경하여 중복 트윗 방지
-    if os.environ.get("TWEET_ON_START", "false").lower() == "true":
+    if os.environ.get("TWEET_ON_START", "true").lower() == "true":
         print("시작 시 첫 번째 트윗을 발송합니다.")
         bot.post_next_tweet()
     else:
