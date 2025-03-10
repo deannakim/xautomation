@@ -2,6 +2,8 @@ import tweepy
 import schedule
 import time
 import json
+import random
+import string
 from datetime import datetime
 import os
 from dotenv import load_dotenv
@@ -116,13 +118,22 @@ class TwitterBot:
         try:
             tweet = self.tweets[self.current_index]
             
-            # 눈에 보이지 않는 문자 추가 (제로 너비 공백)
-            invisible_char = "\u200B"  # 제로 너비 공백
-            modified_tweet = tweet + invisible_char * (self.current_index % 5 + 1)
+            # 랜덤 문자열 생성 (눈에 잘 띄지 않는 위치에 추가)
+            random_str = ''.join(random.choices(string.ascii_letters + string.digits, k=4))
+            
+            # 트윗 끝에 랜덤 문자열 추가 (점 뒤에 공백과 함께)
+            if any(tweet.endswith(x) for x in ['.', '!', '?', ')', ']', '}']):
+                modified_tweet = tweet + ' ' + random_str
+            else:
+                modified_tweet = tweet + '. ' + random_str
+            
+            # 트윗 길이 제한 확인 (280자)
+            if len(modified_tweet) > 280:
+                modified_tweet = tweet[:270] + '... ' + random_str
             
             response = self.client.create_tweet(text=modified_tweet)
             print(f"트윗 발송 성공! ({datetime.now()})")
-            print(f"내용: {tweet}")  # 로그에는 원본 트윗 표시
+            print(f"내용: {tweet} (랜덤 문자열: {random_str})")
             
             # 다음 트윗으로 이동
             self.current_index = (self.current_index + 1) % len(self.tweets)
@@ -145,7 +156,6 @@ def main():
     schedule.every(interval).hours.do(bot.post_next_tweet)
     
     # 첫 번째 트윗 즉시 발송 (환경 변수로 제어 가능)
-    # 기본값을 false로 변경하여 중복 트윗 방지
     if os.environ.get("TWEET_ON_START", "true").lower() == "true":
         print("시작 시 첫 번째 트윗을 발송합니다.")
         bot.post_next_tweet()
