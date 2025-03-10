@@ -116,12 +116,13 @@ class TwitterBot:
         try:
             tweet = self.tweets[self.current_index]
             
-            # 타임스탬프 없이 원본 트윗 그대로 사용
-            modified_tweet = tweet
+            # 눈에 보이지 않는 문자 추가 (제로 너비 공백)
+            invisible_char = "\u200B"  # 제로 너비 공백
+            modified_tweet = tweet + invisible_char * (self.current_index % 5 + 1)
             
             response = self.client.create_tweet(text=modified_tweet)
             print(f"트윗 발송 성공! ({datetime.now()})")
-            print(f"내용: {modified_tweet}")
+            print(f"내용: {tweet}")  # 로그에는 원본 트윗 표시
             
             # 다음 트윗으로 이동
             self.current_index = (self.current_index + 1) % len(self.tweets)
