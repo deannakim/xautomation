@@ -106,41 +106,35 @@ class TwitterBot:
             print(f"총 {len(self.tweets)}개의 트윗이 있습니다.")
     
     def post_next_tweet(self):
-        # 매번 포스팅 전에 트윗 목록 확인
-        self.reload_tweets()
+    # 매번 포스팅 전에 트윗 목록 확인
+    self.reload_tweets()
+    
+    if not self.tweets:
+        print("포스팅할 트윗이 없습니다.")
+        return
+    
+    try:
+        tweet = self.tweets[self.current_index]
         
-        if not self.tweets:
-            print("포스팅할 트윗이 없습니다.")
-            return
+        # 타임스탬프 없이 원본 트윗 그대로 사용
+        modified_tweet = tweet
         
-        try:
-            tweet = self.tweets[self.current_index]
-            
-            # 타임스탬프 추가하여 중복 방지
-            current_time = datetime.now().strftime("%H:%M")
-            modified_tweet = f"{tweet} [게시: {current_time}]"
-            
-            # 트윗 길이 제한 확인 (280자)
-            if len(modified_tweet) > 280:
-                # 트윗이 너무 길면 타임스탬프만 추가
-                modified_tweet = f"{tweet[:275]}... [{current_time}]"
-            
-            response = self.client.create_tweet(text=modified_tweet)
-            print(f"트윗 발송 성공! ({datetime.now()})")
-            print(f"내용: {modified_tweet}")
-            
-            # 다음 트윗으로 이동
+        response = self.client.create_tweet(text=modified_tweet)
+        print(f"트윗 발송 성공! ({datetime.now()})")
+        print(f"내용: {modified_tweet}")
+        
+        # 다음 트윗으로 이동
+        self.current_index = (self.current_index + 1) % len(self.tweets)
+        self.save_current_index()  # 인덱스 저장
+        
+    except Exception as e:
+        print(f"트윗 발송 실패: {e}")
+        
+        # 중복 콘텐츠 오류인 경우 다음 트윗으로 이동
+        if "duplicate content" in str(e).lower():
+            print("중복 콘텐츠 오류로 다음 트윗으로 넘어갑니다.")
             self.current_index = (self.current_index + 1) % len(self.tweets)
             self.save_current_index()  # 인덱스 저장
-            
-        except Exception as e:
-            print(f"트윗 발송 실패: {e}")
-            
-            # 중복 콘텐츠 오류인 경우 다음 트윗으로 이동
-            if "duplicate content" in str(e).lower():
-                print("중복 콘텐츠 오류로 다음 트윗으로 넘어갑니다.")
-                self.current_index = (self.current_index + 1) % len(self.tweets)
-                self.save_current_index()  # 인덱스 저장
 
 def main():
     bot = TwitterBot()
