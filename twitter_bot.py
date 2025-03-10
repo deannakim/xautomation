@@ -44,7 +44,10 @@ class TwitterBot:
         
         # 트윗 목록 로드
         self.tweets = self.load_tweets()
-        self.current_index = 0
+        
+        # 현재 인덱스 로드 (중복 트윗 방지)
+        self.current_index = self.load_current_index()
+        print(f"현재 트윗 인덱스: {self.current_index}")
     
     def load_tweets(self):
         try:
@@ -65,6 +68,31 @@ class TwitterBot:
             print(f"JSON 파일 형식이 잘못되었습니다: {e}")
             return []
     
+    def load_current_index(self):
+        """현재 트윗 인덱스 로드 (중복 트윗 방지)"""
+        try:
+            if os.path.exists('current_index.txt'):
+                with open('current_index.txt', 'r') as f:
+                    index = int(f.read().strip())
+                    # 인덱스가 유효한지 확인
+                    if self.tweets and index < len(self.tweets):
+                        return index
+                    else:
+                        return 0
+            return 0
+        except Exception as e:
+            print(f"인덱스 로드 실패: {e}")
+            return 0
+    
+    def save_current_index(self):
+        """현재 트윗 인덱스 저장"""
+        try:
+            with open('current_index.txt', 'w') as f:
+                f.write(str(self.current_index))
+            print(f"인덱스 저장 완료: {self.current_index}")
+        except Exception as e:
+            print(f"인덱스 저장 실패: {e}")
+    
     def reload_tweets(self):
         """트윗 목록 새로고침 및 처음부터 시작"""
         old_tweets = self.tweets.copy()
@@ -73,6 +101,7 @@ class TwitterBot:
         # 내용이 변경되었는지 확인
         if old_tweets != self.tweets:
             self.current_index = 0  # 처음부터 시작
+            self.save_current_index()  # 인덱스 저장
             print("새로운 트윗 목록이 감지되어 처음부터 시작합니다!")
             print(f"총 {len(self.tweets)}개의 트윗이 있습니다.")
     
@@ -86,15 +115,32 @@ class TwitterBot:
         
         try:
             tweet = self.tweets[self.current_index]
-            response = self.client.create_tweet(text=tweet)
+            
+            # 타임스탬프 추가하여 중복 방지
+            current_time = datetime.now().strftime("%H:%M")
+            modified_tweet = f"{tweet} [게시: {current_time}]"
+            
+            # 트윗 길이 제한 확인 (280자)
+            if len(modified_tweet) > 280:
+                # 트윗이 너무 길면 타임스탬프만 추가
+                modified_tweet = f"{tweet[:275]}... [{current_time}]"
+            
+            response = self.client.create_tweet(text=modified_tweet)
             print(f"트윗 발송 성공! ({datetime.now()})")
-            print(f"내용: {tweet}")
+            print(f"내용: {modified_tweet}")
             
             # 다음 트윗으로 이동
             self.current_index = (self.current_index + 1) % len(self.tweets)
+            self.save_current_index()  # 인덱스 저장
             
         except Exception as e:
             print(f"트윗 발송 실패: {e}")
+            
+            # 중복 콘텐츠 오류인 경우 다음 트윗으로 이동
+            if "duplicate content" in str(e).lower():
+                print("중복 콘텐츠 오류로 다음 트윗으로 넘어갑니다.")
+                self.current_index = (self.current_index + 1) % len(self.tweets)
+                self.save_current_index()  # 인덱스 저장
 
 def main():
     bot = TwitterBot()
@@ -104,7 +150,8 @@ def main():
     schedule.every(interval).hours.do(bot.post_next_tweet)
     
     # 첫 번째 트윗 즉시 발송 (환경 변수로 제어 가능)
-    if os.environ.get("TWEET_ON_START", "true").lower() == "true":
+    # 기본값을 false로 변경하여 중복 트윗 방지
+    if os.environ.get("TWEET_ON_START", "false").lower() == "true":
         print("시작 시 첫 번째 트윗을 발송합니다.")
         bot.post_next_tweet()
     else:
