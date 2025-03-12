@@ -6,8 +6,6 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 import random
-import requests
-from requests_oauthlib import OAuth1
 
 # Tweepy 버전 출력
 print(f"Tweepy 버전: {tweepy.__version__}")
@@ -27,6 +25,7 @@ class TwitterBot:
         self.api_secret = os.environ.get("TWITTER_API_SECRET")
         self.access_token = os.environ.get("TWITTER_ACCESS_TOKEN")
         self.access_token_secret = os.environ.get("TWITTER_ACCESS_TOKEN_SECRET")
+        self.bearer_token = os.environ.get("TWITTER_BEARER_TOKEN")
         
         # Check environment variables
         if not all([self.api_key, self.api_secret, self.access_token, self.access_token_secret]):
@@ -35,30 +34,37 @@ class TwitterBot:
             print(f"API_SECRET: {'설정됨' if self.api_secret else '설정되지 않음'}")
             print(f"ACCESS_TOKEN: {'설정됨' if self.access_token else '설정되지 않음'}")
             print(f"ACCESS_TOKEN_SECRET: {'설정됨' if self.access_token_secret else '설정되지 않음'}")
+            print(f"BEARER_TOKEN: {'설정됨' if self.bearer_token else '설정되지 않음'}")
         
-        # Twitter API v1.1 setup
+        # Twitter API v2 setup
         try:
-            print("API v1.1 설정 시도 중...")
+            print("API v2 설정 시도 중...")
             print(f"API 키: {self.api_key[:5]}... (일부만 표시)")
             print(f"API 시크릿: {self.api_secret[:5]}... (일부만 표시)")
             print(f"액세스 토큰: {self.access_token[:5]}... (일부만 표시)")
             print(f"액세스 토큰 시크릿: {self.access_token_secret[:5]}... (일부만 표시)")
+            print(f"Bearer Token: {self.bearer_token[:5] if self.bearer_token else 'None'}... (일부만 표시)")
             
-            auth = tweepy.OAuth1UserHandler(
-                self.api_key, self.api_secret,
-                self.access_token, self.access_token_secret
+            self.client = tweepy.Client(
+                bearer_token=self.bearer_token,
+                consumer_key=self.api_key,
+                consumer_secret=self.api_secret,
+                access_token=self.access_token,
+                access_token_secret=self.access_token_secret
             )
-            self.api = tweepy.API(auth)
             
             # 계정 정보 확인 (연결 테스트)
-            me = self.api.verify_credentials()
-            print(f"인증된 계정: @{me.screen_name}")
-            print("API v1.1 설정 완료")
-            
+            me = self.client.get_me()
+            if me.data:
+                print(f"인증된 계정: @{me.data.username}")
+                print("API v2 설정 완료")
+            else:
+                print("계정 정보를 가져올 수 없습니다.")
+                
         except Exception as e:
-            print(f"API v1.1 설정 실패: {str(e)}")
+            print(f"API v2 설정 실패: {str(e)}")
             print(f"오류 타입: {type(e)}")
-            self.api = None
+            self.client = None
         
         # Tweet interval setting (8 hours)
         self.tweet_interval = 8
@@ -136,7 +142,7 @@ class TwitterBot:
             print("게시할 트윗이 없습니다.")
             return
         
-        if self.api is None:
+        if self.client is None:
             print("API가 설정되지 않았습니다. 트윗을 게시할 수 없습니다.")
             return
         
@@ -152,62 +158,21 @@ class TwitterBot:
             print(f"트윗 전송 시도 중... (인덱스: {self.current_index})")
             print(f"내용: {tweet[:50]}..." if len(tweet) > 50 else f"내용: {tweet}")
             
-            # 여러 방법으로 트윗 전송 시도
-            success = False
+            # API v2로 트윗 전송
+            response = self.client.create_tweet(text=modified_tweet)
             
-            # 방법 1: 기본 update_status 메서드
-            try:
-                status = self.api.update_status(modified_tweet)
-                print(f"트윗 전송 성공! (방법 1)")
-                print(f"트윗 ID: {status.id}")
-                print(f"트윗 URL: https://twitter.com/user/status/{status.id}")
-                success = True
-            except Exception as e1:
-                print(f"방법 1 실패: {str(e1)}")
+            if response.data:
+                tweet_id = response.data['id']
+                print(f"트윗 전송 성공! (API v2)")
+                print(f"트윗 ID: {tweet_id}")
+                print(f"트윗 URL: https://twitter.com/user/status/{tweet_id}")
                 
-                # 방법 2: statuses/update 엔드포인트 직접 사용
-                try:
-                    response = self.api.request('statuses/update', {'status': modified_tweet})
-                    if response.status_code == 200:
-                        print(f"트윗 전송 성공! (방법 2)")
-                        print(f"응답: {response.json()}")
-                        success = True
-                    else:
-                        print(f"방법 2 실패: {response.status_code} - {response.text}")
-                except Exception as e2:
-                    print(f"방법 2 실패: {str(e2)}")
-                    
-                    # 방법 3: REST API 직접 호출
-                    try:
-                        url = "https://api.twitter.com/1.1/statuses/update.json"
-                        auth = OAuth1(
-                            self.api_key, self.api_secret,
-                            self.access_token, self.access_token_secret
-                        )
-                        params = {"status": modified_tweet}
-                        response = requests.post(url, auth=auth, params=params)
-                        
-                        if response.status_code == 200:
-                            print(f"트윗 전송 성공! (방법 3)")
-                            print(f"응답: {response.json()}")
-                            success = True
-                        else:
-                            print(f"방법 3 실패: {response.status_code} - {response.text}")
-                    except Exception as e3:
-                        print(f"방법 3 실패: {str(e3)}")
-            
-            # 성공했을 경우에만 다음 트윗으로 이동
-            if success:
+                # 다음 트윗으로 이동
                 self.current_index = (self.current_index + 1) % len(self.tweets)
                 self.save_current_index()
                 print(f"다음 트윗 인덱스: {self.current_index}")
             else:
-                print("모든 방법이 실패했습니다. 다음 예약된 시간에 다시 시도합니다.")
-                
-                # 유료 플랜 안내 메시지
-                print("\n참고: 트위터는 2023년에 API 정책을 변경하여 많은 기능을 유료로 전환했습니다.")
-                print("무료 계정에서는 트윗 게시 기능이 제한될 수 있습니다.")
-                print("자세한 내용은 https://developer.twitter.com/en/portal/products 에서 확인할 수 있습니다.")
+                print("트윗 전송 실패: 응답에 데이터가 없습니다.")
                 
         except Exception as e:
             print(f"트윗 전송 실패: {str(e)}")
@@ -222,6 +187,11 @@ class TwitterBot:
             # If rate limit error, wait and try again later
             if "rate limit" in str(e).lower():
                 print("속도 제한 오류, 나중에 다시 시도합니다.")
+            
+            # If monthly limit reached
+            if "monthly" in str(e).lower() or "limit" in str(e).lower():
+                print("월간 API 사용량 제한에 도달했습니다. 다음 달까지 기다려야 합니다.")
+                print("무료 플랜은 월 500회 트윗 게시로 제한됩니다.")
 
 def main():
     bot = TwitterBot()
