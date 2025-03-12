@@ -7,6 +7,9 @@ import os
 from dotenv import load_dotenv
 import random
 
+# Tweepy 버전 출력
+print(f"Tweepy 버전: {tweepy.__version__}")
+
 # Environment variable setup code
 # Load .env file in local development, use system environment variables in production
 if os.path.exists('tweepy_keys.env'):
@@ -22,7 +25,7 @@ class TwitterBot:
         self.api_secret = os.environ.get("TWITTER_API_SECRET")
         self.access_token = os.environ.get("TWITTER_ACCESS_TOKEN")
         self.access_token_secret = os.environ.get("TWITTER_ACCESS_TOKEN_SECRET")
-        self.bearer_token = os.environ.get("TWITTER_BEARER_TOKEN")  # API v2에 필요할 수 있음
+        self.bearer_token = os.environ.get("TWITTER_BEARER_TOKEN")
         
         # Check environment variables
         if not all([self.api_key, self.api_secret, self.access_token, self.access_token_secret]):
@@ -125,7 +128,9 @@ class TwitterBot:
             random_invisible = ''.join(random.choice(invisible_chars) for _ in range(random.randint(1, 5)))
             modified_tweet = tweet + random_invisible
             
-            # Print tweet info before sending
+            # 디버깅 정보 출력
+            print(f"API 키: {self.api_key[:5]}... (일부만 표시)")
+            print(f"Bearer Token: {self.bearer_token[:5] if self.bearer_token else 'None'}... (일부만 표시)")
             print(f"트윗 전송 시도 중... (인덱스: {self.current_index})")
             print(f"내용: {tweet[:50]}..." if len(tweet) > 50 else f"내용: {tweet}")
             
@@ -142,6 +147,11 @@ class TwitterBot:
         except tweepy.TweepyException as e:
             print(f"트윗 전송 실패: {e.api_code if hasattr(e, 'api_code') else 'N/A'} {e.reason if hasattr(e, 'reason') else ''}")
             print(f"오류 세부 정보: {str(e)}")
+            print(f"오류 타입: {type(e)}")
+            
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"응답 상태 코드: {e.response.status_code if hasattr(e.response, 'status_code') else 'Unknown'}")
+                print(f"응답 내용: {e.response.text if hasattr(e.response, 'text') else 'Unknown'}")
             
             # If duplicate content error, move to next tweet
             if "duplicate content" in str(e).lower():
@@ -156,13 +166,16 @@ class TwitterBot:
             # If authentication error, print more details
             if hasattr(e, 'api_code') and e.api_code == 401:
                 print("인증 오류: API 키와 토큰을 확인하세요.")
+                print("트위터 개발자 포털에서 앱 설정을 확인하고 필요한 경우 토큰을 재생성하세요.")
             
             # If forbidden error, print more details
             if hasattr(e, 'api_code') and e.api_code == 403:
                 print("권한 오류: 앱에 트윗 게시 권한이 없거나 계정이 제한되었을 수 있습니다.")
+                print("트위터 개발자 포털에서 앱이 'Read and Write' 권한을 가지고 있는지 확인하세요.")
         
         except Exception as e:
             print(f"예상치 못한 오류 발생: {str(e)}")
+            print(f"오류 타입: {type(e)}")
 
 def main():
     bot = TwitterBot()
