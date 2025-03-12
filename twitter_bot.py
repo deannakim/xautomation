@@ -6,6 +6,8 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 import random
+import requests
+from requests_oauthlib import OAuth1
 
 # Tweepy 버전 출력
 print(f"Tweepy 버전: {tweepy.__version__}")
@@ -36,19 +38,26 @@ class TwitterBot:
         
         # Twitter API v1.1 setup
         try:
+            print("API v1.1 설정 시도 중...")
+            print(f"API 키: {self.api_key[:5]}... (일부만 표시)")
+            print(f"API 시크릿: {self.api_secret[:5]}... (일부만 표시)")
+            print(f"액세스 토큰: {self.access_token[:5]}... (일부만 표시)")
+            print(f"액세스 토큰 시크릿: {self.access_token_secret[:5]}... (일부만 표시)")
+            
             auth = tweepy.OAuth1UserHandler(
                 self.api_key, self.api_secret,
                 self.access_token, self.access_token_secret
             )
             self.api = tweepy.API(auth)
-            print("API v1.1 설정 완료")
             
             # 계정 정보 확인 (연결 테스트)
             me = self.api.verify_credentials()
             print(f"인증된 계정: @{me.screen_name}")
+            print("API v1.1 설정 완료")
             
         except Exception as e:
             print(f"API v1.1 설정 실패: {str(e)}")
+            print(f"오류 타입: {type(e)}")
             self.api = None
         
         # Tweet interval setting (8 hours)
@@ -79,6 +88,7 @@ class TwitterBot:
             return []
         except json.JSONDecodeError as e:
             print(f"JSON 파일 형식이 잘못되었습니다: {e}")
+            print(f"파일 내용: {open(tweets_file, 'r', encoding='utf-8').read()}")
             return []
     
     def load_current_index(self):
@@ -139,21 +149,67 @@ class TwitterBot:
             modified_tweet = tweet + random_invisible
             
             # Print tweet info before sending
-            print(f"API 키: {self.api_key[:5]}... (일부만 표시)")
             print(f"트윗 전송 시도 중... (인덱스: {self.current_index})")
             print(f"내용: {tweet[:50]}..." if len(tweet) > 50 else f"내용: {tweet}")
             
-            # Send tweet using API v1.1
-            status = self.api.update_status(modified_tweet)
+            # 여러 방법으로 트윗 전송 시도
+            success = False
             
-            print(f"트윗 전송 성공! ({datetime.now()})")
-            print(f"트윗 ID: {status.id}")
+            # 방법 1: 기본 update_status 메서드
+            try:
+                status = self.api.update_status(modified_tweet)
+                print(f"트윗 전송 성공! (방법 1)")
+                print(f"트윗 ID: {status.id}")
+                print(f"트윗 URL: https://twitter.com/user/status/{status.id}")
+                success = True
+            except Exception as e1:
+                print(f"방법 1 실패: {str(e1)}")
+                
+                # 방법 2: statuses/update 엔드포인트 직접 사용
+                try:
+                    response = self.api.request('statuses/update', {'status': modified_tweet})
+                    if response.status_code == 200:
+                        print(f"트윗 전송 성공! (방법 2)")
+                        print(f"응답: {response.json()}")
+                        success = True
+                    else:
+                        print(f"방법 2 실패: {response.status_code} - {response.text}")
+                except Exception as e2:
+                    print(f"방법 2 실패: {str(e2)}")
+                    
+                    # 방법 3: REST API 직접 호출
+                    try:
+                        url = "https://api.twitter.com/1.1/statuses/update.json"
+                        auth = OAuth1(
+                            self.api_key, self.api_secret,
+                            self.access_token, self.access_token_secret
+                        )
+                        params = {"status": modified_tweet}
+                        response = requests.post(url, auth=auth, params=params)
+                        
+                        if response.status_code == 200:
+                            print(f"트윗 전송 성공! (방법 3)")
+                            print(f"응답: {response.json()}")
+                            success = True
+                        else:
+                            print(f"방법 3 실패: {response.status_code} - {response.text}")
+                    except Exception as e3:
+                        print(f"방법 3 실패: {str(e3)}")
             
-            # Move to next tweet
-            self.current_index = (self.current_index + 1) % len(self.tweets)
-            self.save_current_index()  # Save index
-            
-        except tweepy.TweepyException as e:
+            # 성공했을 경우에만 다음 트윗으로 이동
+            if success:
+                self.current_index = (self.current_index + 1) % len(self.tweets)
+                self.save_current_index()
+                print(f"다음 트윗 인덱스: {self.current_index}")
+            else:
+                print("모든 방법이 실패했습니다. 다음 예약된 시간에 다시 시도합니다.")
+                
+                # 유료 플랜 안내 메시지
+                print("\n참고: 트위터는 2023년에 API 정책을 변경하여 많은 기능을 유료로 전환했습니다.")
+                print("무료 계정에서는 트윗 게시 기능이 제한될 수 있습니다.")
+                print("자세한 내용은 https://developer.twitter.com/en/portal/products 에서 확인할 수 있습니다.")
+                
+        except Exception as e:
             print(f"트윗 전송 실패: {str(e)}")
             print(f"오류 타입: {type(e)}")
             
@@ -161,15 +217,11 @@ class TwitterBot:
             if "duplicate" in str(e).lower():
                 print("중복 콘텐츠 오류, 다음 트윗으로 이동합니다.")
                 self.current_index = (self.current_index + 1) % len(self.tweets)
-                self.save_current_index()  # Save index
+                self.save_current_index()
             
             # If rate limit error, wait and try again later
             if "rate limit" in str(e).lower():
                 print("속도 제한 오류, 나중에 다시 시도합니다.")
-        
-        except Exception as e:
-            print(f"예상치 못한 오류 발생: {str(e)}")
-            print(f"오류 타입: {type(e)}")
 
 def main():
     bot = TwitterBot()
