@@ -22,6 +22,7 @@ class TwitterBot:
         self.api_secret = os.environ.get("TWITTER_API_SECRET")
         self.access_token = os.environ.get("TWITTER_ACCESS_TOKEN")
         self.access_token_secret = os.environ.get("TWITTER_ACCESS_TOKEN_SECRET")
+        self.bearer_token = os.environ.get("TWITTER_BEARER_TOKEN")  # API v2에 필요할 수 있음
         
         # Check environment variables
         if not all([self.api_key, self.api_secret, self.access_token, self.access_token_secret]):
@@ -30,9 +31,11 @@ class TwitterBot:
             print(f"API_SECRET: {'설정됨' if self.api_secret else '설정되지 않음'}")
             print(f"ACCESS_TOKEN: {'설정됨' if self.access_token else '설정되지 않음'}")
             print(f"ACCESS_TOKEN_SECRET: {'설정됨' if self.access_token_secret else '설정되지 않음'}")
+            print(f"BEARER_TOKEN: {'설정됨' if self.bearer_token else '설정되지 않음'}")
         
         # Twitter API authentication and client setup
         self.client = tweepy.Client(
+            bearer_token=self.bearer_token,
             consumer_key=self.api_key,
             consumer_secret=self.api_secret,
             access_token=self.access_token,
@@ -126,10 +129,11 @@ class TwitterBot:
             print(f"트윗 전송 시도 중... (인덱스: {self.current_index})")
             print(f"내용: {tweet[:50]}..." if len(tweet) > 50 else f"내용: {tweet}")
             
-            # Send tweet
+            # Send tweet using API v2
             response = self.client.create_tweet(text=modified_tweet)
             
             print(f"트윗 전송 성공! ({datetime.now()})")
+            print(f"트윗 ID: {response.data['id'] if hasattr(response, 'data') and 'id' in response.data else 'Unknown'}")
             
             # Move to next tweet
             self.current_index = (self.current_index + 1) % len(self.tweets)
@@ -148,6 +152,14 @@ class TwitterBot:
             # If rate limit error, wait and try again later
             if hasattr(e, 'api_code') and e.api_code == 429:
                 print("속도 제한 오류, 나중에 다시 시도합니다.")
+            
+            # If authentication error, print more details
+            if hasattr(e, 'api_code') and e.api_code == 401:
+                print("인증 오류: API 키와 토큰을 확인하세요.")
+            
+            # If forbidden error, print more details
+            if hasattr(e, 'api_code') and e.api_code == 403:
+                print("권한 오류: 앱에 트윗 게시 권한이 없거나 계정이 제한되었을 수 있습니다.")
         
         except Exception as e:
             print(f"예상치 못한 오류 발생: {str(e)}")

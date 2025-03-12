@@ -1,0 +1,8 @@
+# apikeys
+tweepy_keys.env
+*.env
+
+# Python related
+__pycache__/
+*.py[cod]
+*$py.class
