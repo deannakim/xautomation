@@ -2,13 +2,13 @@ import tweepy
 import schedule
 import time
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 from dotenv import load_dotenv
 import random
 
-# 환경 변수 설정을 위한 코드
-# 로컬 개발 환경에서는 .env 파일 로드, 배포 환경에서는 환경 변수 사용
+# Environment variable setup code
+# Load .env file in local development, use system environment variables in production
 if os.path.exists('tweepy_keys.env'):
     load_dotenv('tweepy_keys.env')
     print("Local environment variables loaded.")
@@ -17,195 +17,159 @@ else:
 
 class TwitterBot:
     def __init__(self):
-        # 환경 변수에서 API 키 가져오기
+        # Get API keys from environment variables
         self.api_key = os.environ.get("TWITTER_API_KEY")
         self.api_secret = os.environ.get("TWITTER_API_SECRET")
         self.access_token = os.environ.get("TWITTER_ACCESS_TOKEN")
         self.access_token_secret = os.environ.get("TWITTER_ACCESS_TOKEN_SECRET")
         
-        # 환경 변수 확인
+        # Check environment variables
         if not all([self.api_key, self.api_secret, self.access_token, self.access_token_secret]):
-            print("Warning: Some Twitter API keys are not set.")
-            print(f"API_KEY: {'Set' if self.api_key else 'Not set'}")
-            print(f"API_SECRET: {'Set' if self.api_secret else 'Not set'}")
-            print(f"ACCESS_TOKEN: {'Set' if self.access_token else 'Not set'}")
-            print(f"ACCESS_TOKEN_SECRET: {'Set' if self.access_token_secret else 'Not set'}")
+            print("경고: 일부 트위터 API 키가 설정되지 않았습니다.")
+            print(f"API_KEY: {'설정됨' if self.api_key else '설정되지 않음'}")
+            print(f"API_SECRET: {'설정됨' if self.api_secret else '설정되지 않음'}")
+            print(f"ACCESS_TOKEN: {'설정됨' if self.access_token else '설정되지 않음'}")
+            print(f"ACCESS_TOKEN_SECRET: {'설정됨' if self.access_token_secret else '설정되지 않음'}")
         
-        # 트위터 API 인증 및 클라이언트 설정 - wait_on_rate_limit 추가
+        # Twitter API authentication and client setup
         self.client = tweepy.Client(
             consumer_key=self.api_key,
             consumer_secret=self.api_secret,
             access_token=self.access_token,
-            access_token_secret=self.access_token_secret,
-            wait_on_rate_limit=True  # 속도 제한 자동 준수
+            access_token_secret=self.access_token_secret
         )
         
-        # 트윗 간격 설정 (환경 변수에서 가져오거나 기본값 사용)
-        self.tweet_interval = int(os.environ.get("TWEET_INTERVAL_HOURS", 6))  # 기본값 6시간으로 증가
-        print(f"Tweet interval: {self.tweet_interval} hours")
+        # Tweet interval setting (8 hours)
+        self.tweet_interval = 8
+        print(f"트윗 간격: {self.tweet_interval} 시간")
         
-        # 트윗 목록 로드
+        # Load tweet list
         self.tweets = self.load_tweets()
         
-        # 현재 인덱스 로드 (중복 트윗 방지)
+        # Load current index (to prevent duplicate tweets)
         self.current_index = self.load_current_index()
-        print(f"Current tweet index: {self.current_index}")
-        
-        # 마지막 트윗 시간 및 속도 제한 상태 추적
-        self.last_tweet_time = None
-        self.rate_limit_reset = None
+        print(f"현재 트윗 인덱스: {self.current_index}")
     
     def load_tweets(self):
         try:
-            # 환경 변수에서 파일 경로 가져오기 (기본값: tweets.json)
+            # Get file path from environment variable (default: tweets.json)
             tweets_file = os.environ.get("TWEETS_FILE", "tweets.json")
             with open(tweets_file, 'r', encoding='utf-8') as f:
                 tweets = json.load(f)
-                print(f"Loaded tweet list ({len(tweets)} tweets):")
-                for i, tweet in enumerate(tweets[:3]):  # 처음 3개만 출력
+                print(f"트윗 목록 로드됨 ({len(tweets)} 트윗):")
+                for i, tweet in enumerate(tweets[:3]):  # Show only first 3
                     print(f"  {i+1}. {tweet[:50]}..." if len(tweet) > 50 else f"  {i+1}. {tweet}")
                 if len(tweets) > 3:
-                    print(f"  ... and {len(tweets)-3} more")
+                    print(f"  ... 그리고 {len(tweets)-3} 개 더")
                 return tweets
         except FileNotFoundError:
-            print(f"tweets.json file not found.")
+            print(f"tweets.json 파일을 찾을 수 없습니다.")
             return []
         except json.JSONDecodeError as e:
-            print(f"JSON file format is invalid: {e}")
+            print(f"JSON 파일 형식이 잘못되었습니다: {e}")
             return []
     
     def load_current_index(self):
-        """현재 트윗 인덱스 로드 (중복 트윗 방지)"""
+        """Load current tweet index (to prevent duplicate tweets)"""
         try:
             if os.path.exists('current_index.txt'):
                 with open('current_index.txt', 'r') as f:
                     index = int(f.read().strip())
-                    # 인덱스가 유효한지 확인
+                    # Check if index is valid
                     if self.tweets and index < len(self.tweets):
                         return index
                     else:
                         return 0
             return 0
         except Exception as e:
-            print(f"Failed to load index: {e}")
+            print(f"인덱스 로드 실패: {e}")
             return 0
     
     def save_current_index(self):
-        """현재 트윗 인덱스 저장"""
+        """Save current tweet index"""
         try:
             with open('current_index.txt', 'w') as f:
                 f.write(str(self.current_index))
-            print(f"Index saved: {self.current_index}")
+            print(f"인덱스 저장됨: {self.current_index}")
         except Exception as e:
-            print(f"Failed to save index: {e}")
+            print(f"인덱스 저장 실패: {e}")
     
     def reload_tweets(self):
-        """트윗 목록 새로고침 및 처음부터 시작"""
-        old_tweets = self.tweets.copy()
+        """Refresh tweet list and start from beginning if changed"""
+        old_tweets = self.tweets.copy() if self.tweets else []
         self.tweets = self.load_tweets()
         
-        # 내용이 변경되었는지 확인
+        # Check if content has changed
         if old_tweets != self.tweets:
-            self.current_index = 0  # 처음부터 시작
-            self.save_current_index()  # 인덱스 저장
-            print("New tweet list detected, starting from the beginning!")
-            print(f"Total {len(self.tweets)} tweets available.")
-    
-    def should_respect_rate_limit(self):
-        """속도 제한을 준수해야 하는지 확인"""
-        # 속도 제한 재설정 시간이 있으면 확인
-        if self.rate_limit_reset:
-            now = datetime.now()
-            if now < self.rate_limit_reset:
-                wait_seconds = (self.rate_limit_reset - now).total_seconds()
-                print(f"Rate limit in effect. Need to wait {wait_seconds:.0f} seconds until {self.rate_limit_reset}")
-                return True
-            else:
-                # 재설정 시간이 지남
-                self.rate_limit_reset = None
-                
-        # 트윗 간격을 준수하는지 확인
-        if self.last_tweet_time:
-            now = datetime.now()
-            elapsed = (now - self.last_tweet_time).total_seconds() / 3600  # 시간 단위
-            if elapsed < self.tweet_interval * 0.9:  # 간격의 90%
-                print(f"Only {elapsed:.2f} hours since last tweet. Waiting for full interval ({self.tweet_interval} hours).")
-                return True
-                
-        return False
+            self.current_index = 0  # Start from beginning
+            self.save_current_index()  # Save index
+            print("새 트윗 목록이 감지되어 처음부터 시작합니다!")
+            print(f"총 {len(self.tweets)} 트윗이 사용 가능합니다.")
     
     def post_next_tweet(self):
-        # 속도 제한을 준수해야 하는지 확인
-        if self.should_respect_rate_limit():
-            return
-            
-        # 매번 포스팅 전에 트윗 목록 확인
+        # Check tweet list before each posting
         self.reload_tweets()
         
         if not self.tweets:
-            print("No tweets to post.")
+            print("게시할 트윗이 없습니다.")
             return
         
         try:
             tweet = self.tweets[self.current_index]
             
-            # 눈에 보이지 않는 문자 추가 (제로 너비 공백)
-            invisible_char = "\u200B"  # 제로 너비 공백
-            modified_tweet = tweet + invisible_char * (self.current_index % 5 + 1)
+            # Add random invisible characters to avoid duplicate content errors
+            invisible_chars = ["\u200B", "\u200C", "\u200D", "\u2060", "\uFEFF"]
+            random_invisible = ''.join(random.choice(invisible_chars) for _ in range(random.randint(1, 5)))
+            modified_tweet = tweet + random_invisible
             
-            # 트윗 발송 전 약간의 지연 추가 (1-5초)
-            time.sleep(random.uniform(1, 5))
+            # Print tweet info before sending
+            print(f"트윗 전송 시도 중... (인덱스: {self.current_index})")
+            print(f"내용: {tweet[:50]}..." if len(tweet) > 50 else f"내용: {tweet}")
             
+            # Send tweet
             response = self.client.create_tweet(text=modified_tweet)
-            print(f"Tweet sent successfully! ({datetime.now()})")
-            print(f"Content: {tweet}")
             
-            # 마지막 트윗 시간 업데이트
-            self.last_tweet_time = datetime.now()
+            print(f"트윗 전송 성공! ({datetime.now()})")
             
-            # 다음 트윗으로 이동
+            # Move to next tweet
             self.current_index = (self.current_index + 1) % len(self.tweets)
-            self.save_current_index()  # 인덱스 저장
+            self.save_current_index()  # Save index
             
-        except Exception as e:
-            error_str = str(e)
-            print(f"Failed to send tweet: {error_str}")
+        except tweepy.TweepyException as e:
+            print(f"트윗 전송 실패: {e.api_code if hasattr(e, 'api_code') else 'N/A'} {e.reason if hasattr(e, 'reason') else ''}")
+            print(f"오류 세부 정보: {str(e)}")
             
-            # 속도 제한 오류 처리
-            if "429" in error_str:
-                print("Rate limit exceeded. Setting cooldown period.")
-                # 속도 제한 재설정 시간을 현재 시간으로부터 60분 후로 설정
-                self.rate_limit_reset = datetime.now() + timedelta(minutes=60)
-                print(f"Will retry after: {self.rate_limit_reset}")
-            
-            # 중복 콘텐츠 오류인 경우 다음 트윗으로 이동
-            elif "duplicate content" in error_str.lower():
-                print("Duplicate content error, moving to next tweet.")
+            # If duplicate content error, move to next tweet
+            if "duplicate content" in str(e).lower():
+                print("중복 콘텐츠 오류, 다음 트윗으로 이동합니다.")
                 self.current_index = (self.current_index + 1) % len(self.tweets)
-                self.save_current_index()  # 인덱스 저장
+                self.save_current_index()  # Save index
+            
+            # If rate limit error, wait and try again later
+            if hasattr(e, 'api_code') and e.api_code == 429:
+                print("속도 제한 오류, 나중에 다시 시도합니다.")
+        
+        except Exception as e:
+            print(f"예상치 못한 오류 발생: {str(e)}")
 
 def main():
     bot = TwitterBot()
     
-    # 환경 변수에서 설정한 시간 간격으로 실행
-    interval = bot.tweet_interval
+    # 8시간마다 실행
+    schedule.every(bot.tweet_interval).hours.do(bot.post_next_tweet)
     
-    # 시작 시간에 약간의 무작위성 추가 (0-30분)
-    random_minutes = random.randint(0, 30)
-    schedule.every(interval).hours.at(f":{random_minutes:02d}").do(bot.post_next_tweet)
-    print(f"Scheduled tweets to run every {interval} hours at :{random_minutes:02d} minutes past the hour")
+    # 시작 시 첫 번째 트윗 즉시 전송
+    print("시작 시 첫 번째 트윗을 전송합니다.")
+    bot.post_next_tweet()
     
-    # 첫 번째 트윗 즉시 발송 (환경 변수로 제어 가능)
-    if os.environ.get("TWEET_ON_START", "false").lower() == "true":  # 기본값을 false로 변경
-        print("Sending first tweet on startup.")
-        bot.post_next_tweet()
-    else:
-        next_run = schedule.next_run()
-        print(f"First tweet will be sent at: {next_run}")
+    # 다음 예정된 트윗 시간 계산
+    next_run = schedule.next_run()
+    if next_run:
+        print(f"다음 트윗 예정 시간: {next_run}")
     
-    print("\nTwitter bot is running...")
-    print(f"Tweets will be automatically sent every {interval} hours.")
-    print("Press Ctrl+C to exit the program.\n")
+    print("\n트위터 봇이 실행 중입니다...")
+    print(f"트윗은 {bot.tweet_interval}시간마다 자동으로 전송됩니다.")
+    print("프로그램을 종료하려면 Ctrl+C를 누르세요.\n")
     
     try:
         while True:
@@ -213,7 +177,7 @@ def main():
             time.sleep(1)
             
     except KeyboardInterrupt:
-        print("\nExiting program.")
+        print("\n프로그램을 종료합니다.")
 
 if __name__ == "__main__":
     main()
