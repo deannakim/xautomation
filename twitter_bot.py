@@ -25,7 +25,6 @@ class TwitterBot:
         self.api_secret = os.environ.get("TWITTER_API_SECRET")
         self.access_token = os.environ.get("TWITTER_ACCESS_TOKEN")
         self.access_token_secret = os.environ.get("TWITTER_ACCESS_TOKEN_SECRET")
-        self.bearer_token = os.environ.get("TWITTER_BEARER_TOKEN")
         
         # Check environment variables
         if not all([self.api_key, self.api_secret, self.access_token, self.access_token_secret]):
@@ -34,16 +33,23 @@ class TwitterBot:
             print(f"API_SECRET: {'설정됨' if self.api_secret else '설정되지 않음'}")
             print(f"ACCESS_TOKEN: {'설정됨' if self.access_token else '설정되지 않음'}")
             print(f"ACCESS_TOKEN_SECRET: {'설정됨' if self.access_token_secret else '설정되지 않음'}")
-            print(f"BEARER_TOKEN: {'설정됨' if self.bearer_token else '설정되지 않음'}")
         
-        # Twitter API authentication and client setup
-        self.client = tweepy.Client(
-            bearer_token=self.bearer_token,
-            consumer_key=self.api_key,
-            consumer_secret=self.api_secret,
-            access_token=self.access_token,
-            access_token_secret=self.access_token_secret
-        )
+        # Twitter API v1.1 setup
+        try:
+            auth = tweepy.OAuth1UserHandler(
+                self.api_key, self.api_secret,
+                self.access_token, self.access_token_secret
+            )
+            self.api = tweepy.API(auth)
+            print("API v1.1 설정 완료")
+            
+            # 계정 정보 확인 (연결 테스트)
+            me = self.api.verify_credentials()
+            print(f"인증된 계정: @{me.screen_name}")
+            
+        except Exception as e:
+            print(f"API v1.1 설정 실패: {str(e)}")
+            self.api = None
         
         # Tweet interval setting (8 hours)
         self.tweet_interval = 8
@@ -120,6 +126,10 @@ class TwitterBot:
             print("게시할 트윗이 없습니다.")
             return
         
+        if self.api is None:
+            print("API가 설정되지 않았습니다. 트윗을 게시할 수 없습니다.")
+            return
+        
         try:
             tweet = self.tweets[self.current_index]
             
@@ -128,50 +138,34 @@ class TwitterBot:
             random_invisible = ''.join(random.choice(invisible_chars) for _ in range(random.randint(1, 5)))
             modified_tweet = tweet + random_invisible
             
-            # 디버깅 정보 출력
+            # Print tweet info before sending
             print(f"API 키: {self.api_key[:5]}... (일부만 표시)")
-            print(f"Bearer Token: {self.bearer_token[:5] if self.bearer_token else 'None'}... (일부만 표시)")
             print(f"트윗 전송 시도 중... (인덱스: {self.current_index})")
             print(f"내용: {tweet[:50]}..." if len(tweet) > 50 else f"내용: {tweet}")
             
-            # Send tweet using API v2
-            response = self.client.create_tweet(text=modified_tweet)
+            # Send tweet using API v1.1
+            status = self.api.update_status(modified_tweet)
             
             print(f"트윗 전송 성공! ({datetime.now()})")
-            print(f"트윗 ID: {response.data['id'] if hasattr(response, 'data') and 'id' in response.data else 'Unknown'}")
+            print(f"트윗 ID: {status.id}")
             
             # Move to next tweet
             self.current_index = (self.current_index + 1) % len(self.tweets)
             self.save_current_index()  # Save index
             
         except tweepy.TweepyException as e:
-            print(f"트윗 전송 실패: {e.api_code if hasattr(e, 'api_code') else 'N/A'} {e.reason if hasattr(e, 'reason') else ''}")
-            print(f"오류 세부 정보: {str(e)}")
+            print(f"트윗 전송 실패: {str(e)}")
             print(f"오류 타입: {type(e)}")
             
-            if hasattr(e, 'response') and e.response is not None:
-                print(f"응답 상태 코드: {e.response.status_code if hasattr(e.response, 'status_code') else 'Unknown'}")
-                print(f"응답 내용: {e.response.text if hasattr(e.response, 'text') else 'Unknown'}")
-            
             # If duplicate content error, move to next tweet
-            if "duplicate content" in str(e).lower():
+            if "duplicate" in str(e).lower():
                 print("중복 콘텐츠 오류, 다음 트윗으로 이동합니다.")
                 self.current_index = (self.current_index + 1) % len(self.tweets)
                 self.save_current_index()  # Save index
             
             # If rate limit error, wait and try again later
-            if hasattr(e, 'api_code') and e.api_code == 429:
+            if "rate limit" in str(e).lower():
                 print("속도 제한 오류, 나중에 다시 시도합니다.")
-            
-            # If authentication error, print more details
-            if hasattr(e, 'api_code') and e.api_code == 401:
-                print("인증 오류: API 키와 토큰을 확인하세요.")
-                print("트위터 개발자 포털에서 앱 설정을 확인하고 필요한 경우 토큰을 재생성하세요.")
-            
-            # If forbidden error, print more details
-            if hasattr(e, 'api_code') and e.api_code == 403:
-                print("권한 오류: 앱에 트윗 게시 권한이 없거나 계정이 제한되었을 수 있습니다.")
-                print("트위터 개발자 포털에서 앱이 'Read and Write' 권한을 가지고 있는지 확인하세요.")
         
         except Exception as e:
             print(f"예상치 못한 오류 발생: {str(e)}")
